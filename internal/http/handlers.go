@@ -108,20 +108,23 @@ func (h *Handlers) MeHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type moodEntry struct {
-	Genre string `json:"genre"`
-	Plays int    `json:"plays"`
-}
+const topLimit = 25
 
-func (h *Handlers) MoodsHandler(w http.ResponseWriter, r *http.Request) {
-	userID, _ := UserIDFromContext(r.Context())
-	snapshot := metrics.MoodSnapshot(userID)
-	entries := make([]moodEntry, 0, len(snapshot))
-	for mood, plays := range snapshot {
-		entries = append(entries, moodEntry{Genre: mood, Plays: plays})
+// windowSince reads ?window= (default 7d). On an invalid value it writes a 400
+// and returns ok=false.
+func windowSince(w http.ResponseWriter, r *http.Request) (time.Time, bool) {
+	raw := r.URL.Query().Get("window")
+	if raw == "" {
+		raw = string(store.Window7d)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(entries)
+	win, ok := store.ParseWindow(raw)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error":"invalid window; use 24h, 7d, 30d or all"}` + "\n"))
+		return time.Time{}, false
+	}
+	return win.Since(time.Now()), true
 }
 
 type artistEntry struct {
@@ -131,7 +134,15 @@ type artistEntry struct {
 
 func (h *Handlers) ArtistsHandler(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFromContext(r.Context())
-	artists := metrics.ArtistsSnapshot(userID)
+	since, ok := windowSince(w, r)
+	if !ok {
+		return
+	}
+	artists, err := h.Store.TopArtists(userID, since, topLimit)
+	if err != nil {
+		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		return
+	}
 	entries := make([]artistEntry, 0, len(artists))
 	for _, a := range artists {
 		entries = append(entries, artistEntry{Name: a.Name, Plays: a.Plays})
@@ -148,7 +159,15 @@ type trackEntry struct {
 
 func (h *Handlers) TracksHandler(w http.ResponseWriter, r *http.Request) {
 	userID, _ := UserIDFromContext(r.Context())
-	tracks := metrics.TracksSnapshot(userID)
+	since, ok := windowSince(w, r)
+	if !ok {
+		return
+	}
+	tracks, err := h.Store.TopTracks(userID, since, topLimit)
+	if err != nil {
+		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		return
+	}
 	entries := make([]trackEntry, 0, len(tracks))
 	for _, t := range tracks {
 		entries = append(entries, trackEntry{Name: t.Name, Artist: t.Artist, Plays: t.Plays})
