@@ -1,26 +1,47 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink: #131016;
+  --sleeve: #1c1822;
+  --edge: #2c2735;
+  --bone: #f1ebe0;
+  --dust: #8f8898;
+  --signal: #ffc247;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ink: var(--ink);
+  --color-sleeve: var(--sleeve);
+  --color-edge: var(--edge);
+  --color-bone: var(--bone);
+  --color-dust: var(--dust);
+  --color-signal: var(--signal);
+  --font-sans: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ink);
+  color: var(--bone);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Display type for the hero and the sign-in headline */
+.display {
+  font-weight: 800;
+  font-stretch: 75%;
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
 }

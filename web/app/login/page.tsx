@@ -1,16 +1,26 @@
 export default function LoginPage() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-black">
-      <div className="text-center space-y-6">
-        <h1 className="text-4xl font-bold text-emerald-500">Beatlytics</h1>
-        <p className="text-gray-400">Your Spotify listening analytics</p>
+    <main className="flex min-h-screen flex-col justify-between px-6 py-8 sm:px-12 sm:py-10">
+      <span className="text-lg font-semibold tracking-tight">Beatlytics</span>
+
+      <div className="max-w-3xl pb-16">
+        <h1 className="display text-[clamp(3rem,10vw,8rem)]">
+          See what you&rsquo;ve actually been playing.
+        </h1>
+        <p className="mt-6 max-w-md text-lg text-dust">
+          Sign in with Spotify to see your most played artists and songs.
+          Beatlytics only reads your listening history and never changes your
+          playlists or library.
+        </p>
         <a
           href="/auth/login"
-          className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-bold px-8 py-3 rounded-full transition-colors"
+          className="mt-10 inline-flex items-center rounded-full bg-signal px-8 py-3.5 font-semibold text-ink transition hover:brightness-110"
         >
           Sign in with Spotify
         </a>
       </div>
+
+      <span aria-hidden className="h-4" />
     </main>
   );
 }

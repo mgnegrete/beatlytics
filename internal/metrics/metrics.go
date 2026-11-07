@@ -167,8 +167,9 @@ func pollUser(userID string, client *spotify.Client) {
 
 	features, err := client.GetAudioFeatures(token, trackIDs)
 	if err != nil {
-		log.Printf("poller[%s]: audio features: %v", userID, err)
-		return
+		// Non-fatal: artists and tracks don't need audio features.
+		log.Printf("poller[%s]: audio features unavailable, skipping moods: %v", userID, err)
+		features = nil
 	}
 
 	// Classify each track into a mood bucket.
