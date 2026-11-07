@@ -1,0 +1,17 @@
+groups:
+  - name: beatlytics
+    rules:
+      - alert: PollerStale
+        expr: time() - beatlytics_last_successful_poll_timestamp_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful poll for user {{ $labels.user_id }} in over 15 minutes"
+
+      - alert: SpotifyRateLimited
+        expr: increase(beatlytics_spotify_requests_total{code="429"}[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Spotify returned 429 (rate limited) on {{ $labels.endpoint }}"
