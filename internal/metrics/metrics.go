@@ -26,6 +26,11 @@ var (
 		Help: "Poll failures by stage (token, spotify_fetch, store).",
 	}, []string{"stage"})
 
+	pollPossibleGap = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "beatlytics_poll_possible_gap_total",
+		Help: "Polls that returned a full page (50) after the first poll: plays older than the page may have been missed.",
+	})
+
 	spotifyRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "beatlytics_spotify_requests_total",
 		Help: "Requests to Spotify by endpoint and HTTP status code (0 = transport error).",
@@ -46,7 +51,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(playsTotal, pollDuration, pollErrors, spotifyRequests, lastSuccess, pollersRunning)
+	prometheus.MustRegister(playsTotal, pollDuration, pollErrors, pollPossibleGap, spotifyRequests, lastSuccess, pollersRunning)
 }
 
 // RecordPlays increments the per-artist play counter once per entry.
@@ -57,6 +62,9 @@ func RecordPlays(userID string, artists []string) {
 }
 
 func ObservePoll(d time.Duration) { pollDuration.Observe(d.Seconds()) }
+
+// PossibleGap records a poll whose full page may have hidden earlier plays.
+func PossibleGap() { pollPossibleGap.Inc() }
 
 func PollError(stage string) { pollErrors.WithLabelValues(stage).Inc() }
 

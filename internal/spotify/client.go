@@ -32,6 +32,10 @@ type Client struct {
 	Observe func(endpoint string, code int)
 }
 
+// requestTimeout bounds every Spotify request so a hung connection (e.g. after
+// the machine sleeps) cannot wedge a poller forever.
+const requestTimeout = 30 * time.Second
+
 const (
 	defaultAPIBase  = "https://api.spotify.com"
 	defaultTokenURL = "https://accounts.spotify.com/api/token"
@@ -63,7 +67,7 @@ func NewClient() *Client {
 		clientID:     os.Getenv("SPOTIFY_CLIENT_ID"),
 		clientSecret: os.Getenv("SPOTIFY_CLIENT_SECRET"),
 		refreshToken: os.Getenv("SPOTIFY_REFRESH_TOKEN"),
-		http:         &http.Client{},
+		http:         &http.Client{Timeout: requestTimeout},
 		apiBase:      defaultAPIBase,
 		tokenURL:     defaultTokenURL,
 	}
@@ -74,7 +78,7 @@ func NewClientForUser(clientID, clientSecret, refreshToken string) *Client {
 		clientID:     clientID,
 		clientSecret: clientSecret,
 		refreshToken: refreshToken,
-		http:         &http.Client{},
+		http:         &http.Client{Timeout: requestTimeout},
 		apiBase:      defaultAPIBase,
 		tokenURL:     defaultTokenURL,
 	}

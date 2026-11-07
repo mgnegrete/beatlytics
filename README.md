@@ -107,9 +107,11 @@ Metrics:
 | `beatlytics_poll_errors_total{stage}` | Failures at `token`, `spotify_fetch` or `store` |
 | `beatlytics_spotify_requests_total{endpoint,code}` | Spotify calls by status code (watch for 429) |
 | `beatlytics_last_successful_poll_timestamp_seconds{user_id}` | Last good poll |
+| `beatlytics_poll_possible_gap_total` | Polls that returned a full page of 50, so earlier plays may have been missed |
 | `beatlytics_pollers_running` | Active per-user pollers |
 
 Things to know:
+- Spotify keeps only your last 50 plays. If the server is off long enough for you to play 50+ tracks, the older plays are lost, and `beatlytics_poll_possible_gap_total` goes up the next time it polls. The importer cannot fill such a gap, because it skips everything after your first live-polled play.
 - `artist` is an unbounded label. That is fine for personal or small multi-user use (hundreds to low thousands of series).
 - Grafana uses `increase()`, which cannot see a series' first count. Plays recorded before the first scrape, and the first play of each new artist, are not counted in Grafana. The web dashboard reads from SQLite and is not affected.
 - `/metrics` is unauthenticated and exposes `user_id` and artist labels. Fine on localhost; lock it down before deploying.

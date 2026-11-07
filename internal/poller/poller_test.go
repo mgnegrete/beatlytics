@@ -270,3 +270,53 @@ func TestManagerStartAllStartsEveryUser(t *testing.T) {
 	m.StartAll(users, func(u store.User) Source { return srcs[u.ID] })
 	waitFor(t, func() bool { return srcs["a"].calls.Load() >= 1 && srcs["b"].calls.Load() >= 1 })
 }
+
+func fullBatch(n int) []spotify.TrackItem {
+	items := make([]spotify.TrackItem, n)
+	base := time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)
+	for i := range items {
+		items[i] = item(fmt.Sprintf("g%d", i), "Song", "GapArtist", base.Add(time.Duration(i)*time.Minute).Format(time.RFC3339Nano))
+	}
+	return items
+}
+
+func TestPollOnceFullBatchWithCursorFlagsPossibleGap(t *testing.T) {
+	db := newDB(t)
+	db.InsertPlays("g-u1", nil, 1000) // an existing cursor: not the first poll
+	before := counterValue(t, "beatlytics_poll_possible_gap_total", nil)
+
+	if err := PollOnce("g-u1", &fakeSource{items: fullBatch(50)}, db); err != nil {
+		t.Fatal(err)
+	}
+	if d := counterValue(t, "beatlytics_poll_possible_gap_total", nil) - before; d != 1 {
+		t.Fatalf("possible-gap delta = %v, want 1", d)
+	}
+}
+
+func TestPollOnceFirstPollOrShortBatchDoesNotFlagGap(t *testing.T) {
+	db := newDB(t)
+	before := counterValue(t, "beatlytics_poll_possible_gap_total", nil)
+
+	// First poll (no cursor) legitimately returns a full 50.
+	if err := PollOnce("g-u2", &fakeSource{items: fullBatch(50)}, db); err != nil {
+		t.Fatal(err)
+	}
+	// Later poll with fewer than 50 items.
+	if err := PollOnce("g-u2", &fakeSource{items: fullBatch(49)}, db); err != nil {
+		t.Fatal(err)
+	}
+	if d := counterValue(t, "beatlytics_poll_possible_gap_total", nil) - before; d != 0 {
+		t.Fatalf("possible-gap delta = %v, want 0", d)
+	}
+}
+
+func TestManagerStartSwapsSourceOnRunningPoller(t *testing.T) {
+	m := NewManager(newDB(t), 10*time.Millisecond)
+	oldSrc, newSrc := &fakeSource{}, &fakeSource{}
+
+	m.Start("s-u1", oldSrc)
+	waitFor(t, func() bool { return oldSrc.calls.Load() >= 1 })
+
+	m.Start("s-u1", newSrc) // e.g. user signed in again with fresh credentials
+	waitFor(t, func() bool { return newSrc.calls.Load() >= 1 })
+}

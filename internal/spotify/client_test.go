@@ -74,3 +74,12 @@ func TestGetTokenInvalidGrant(t *testing.T) {
 		t.Fatalf("err %v does not wrap ErrInvalidGrant", err)
 	}
 }
+
+func TestClientsHaveRequestTimeout(t *testing.T) {
+	if NewClientForUser("id", "secret", "refresh").http.Timeout <= 0 {
+		t.Fatal("per-user client has no HTTP timeout; a hung request would wedge its poller forever")
+	}
+	if NewClient().http.Timeout <= 0 {
+		t.Fatal("NewClient has no HTTP timeout")
+	}
+}

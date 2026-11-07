@@ -63,3 +63,11 @@ func TestPollersRunningGauge(t *testing.T) {
 		t.Errorf("delta = %v, want 1", got)
 	}
 }
+
+func TestPossibleGapCounter(t *testing.T) {
+	before := testutil.ToFloat64(pollPossibleGap)
+	PossibleGap()
+	if got := testutil.ToFloat64(pollPossibleGap) - before; got != 1 {
+		t.Errorf("delta = %v, want 1", got)
+	}
+}

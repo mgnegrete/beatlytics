@@ -12,6 +12,9 @@ import (
 	"github.com/mgnegrete/beatlytics/internal/store"
 )
 
+// maxPage is the most plays Spotify returns per request (and in total).
+const maxPage = 50
+
 // Source is the part of the Spotify client the poller needs.
 type Source interface {
 	GetToken() (string, error)
@@ -47,6 +50,13 @@ func PollOnce(userID string, src Source, st Store) error {
 	if err != nil {
 		metrics.PollError("spotify_fetch")
 		return err
+	}
+
+	// Spotify keeps only the last 50 plays. A full page after the first poll
+	// means older plays since the cursor may be gone for good.
+	if cursor > 0 && len(items) >= maxPage {
+		metrics.PossibleGap()
+		log.Printf("poller[%s]: full page of %d plays; some plays since the last poll may have been missed", userID, len(items))
 	}
 
 	plays := make([]store.Play, 0, len(items))
@@ -97,10 +107,11 @@ type Manager struct {
 
 	mu      sync.Mutex
 	running map[string]bool
+	sources map[string]Source
 }
 
 func NewManager(st Store, interval time.Duration) *Manager {
-	return &Manager{st: st, interval: interval, running: map[string]bool{}}
+	return &Manager{st: st, interval: interval, running: map[string]bool{}, sources: map[string]Source{}}
 }
 
 // Running reports whether the user's poller is active.
@@ -110,9 +121,17 @@ func (m *Manager) Running(userID string) bool {
 	return m.running[userID]
 }
 
-// Start begins polling for the user; it does nothing if already running.
+func (m *Manager) source(userID string) Source {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sources[userID]
+}
+
+// Start begins polling for the user. If a poller is already running it keeps
+// running but switches to src, so fresh credentials from a new sign-in are used.
 func (m *Manager) Start(userID string, src Source) {
 	m.mu.Lock()
+	m.sources[userID] = src
 	if m.running[userID] {
 		m.mu.Unlock()
 		return
@@ -121,7 +140,7 @@ func (m *Manager) Start(userID string, src Source) {
 	m.mu.Unlock()
 
 	metrics.PollerStarted()
-	go m.loop(userID, src)
+	go m.loop(userID)
 }
 
 // StartAll starts a poller for every given user.
@@ -131,7 +150,7 @@ func (m *Manager) StartAll(users []store.User, sourceFor func(store.User) Source
 	}
 }
 
-func (m *Manager) loop(userID string, src Source) {
+func (m *Manager) loop(userID string) {
 	defer func() {
 		m.mu.Lock()
 		m.running[userID] = false
@@ -140,7 +159,7 @@ func (m *Manager) loop(userID string, src Source) {
 	}()
 
 	for {
-		err := PollOnce(userID, src, m.st)
+		err := PollOnce(userID, m.source(userID), m.st)
 		wait := m.interval
 		if err != nil {
 			if errors.Is(err, spotify.ErrInvalidGrant) {
