@@ -1,0 +1,7 @@
+[
+  {"ts": "2026-09-01T10:00:00Z", "ms_played": 200000, "master_metadata_track_name": "Song A", "master_metadata_album_artist_name": "Alpha", "spotify_track_uri": "spotify:track:AAA", "spotify_episode_uri": null},
+  {"ts": "2026-09-02T12:00:00+02:00", "ms_played": 45000, "master_metadata_track_name": "Song B", "master_metadata_album_artist_name": "Beta", "spotify_track_uri": "spotify:track:BBB", "spotify_episode_uri": null},
+  {"ts": "2026-09-03T09:00:00Z", "ms_played": 600000, "master_metadata_track_name": null, "master_metadata_album_artist_name": null, "spotify_track_uri": null, "spotify_episode_uri": "spotify:episode:EEE"},
+  {"ts": "2026-09-04T09:00:00Z", "ms_played": 10000, "master_metadata_track_name": "Skipped", "master_metadata_album_artist_name": "Gamma", "spotify_track_uri": "spotify:track:CCC", "spotify_episode_uri": null},
+  {"ts": "2026-10-02T00:00:00Z", "ms_played": 180000, "master_metadata_track_name": "Too Late", "master_metadata_album_artist_name": "Delta", "spotify_track_uri": "spotify:track:DDD", "spotify_episode_uri": null}
+]
