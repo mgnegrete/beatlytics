@@ -2,11 +2,13 @@ package spotify
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +23,39 @@ type Client struct {
 	mu          sync.Mutex
 	accessToken string
 	tokenExpiry time.Time
+
+	apiBase  string
+	tokenURL string
+
+	// Observe, if set, is called after every Spotify request with a short
+	// endpoint name and the HTTP status code (0 if the request itself failed).
+	Observe func(endpoint string, code int)
+}
+
+const (
+	defaultAPIBase  = "https://api.spotify.com"
+	defaultTokenURL = "https://accounts.spotify.com/api/token"
+)
+
+// ErrInvalidGrant is wrapped by GetToken when Spotify rejects the refresh
+// token (revoked or expired); the user must sign in again.
+var ErrInvalidGrant = errors.New("invalid_grant")
+
+// APIError is returned for any non-200 response from the Spotify Web API.
+type APIError struct {
+	Status     int
+	RetryAfter time.Duration
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("spotify api error (%d): %s", e.Status, e.Body)
+}
+
+func (c *Client) observe(endpoint string, code int) {
+	if c.Observe != nil {
+		c.Observe(endpoint, code)
+	}
 }
 
 func NewClient() *Client {
@@ -29,6 +64,8 @@ func NewClient() *Client {
 		clientSecret: os.Getenv("SPOTIFY_CLIENT_SECRET"),
 		refreshToken: os.Getenv("SPOTIFY_REFRESH_TOKEN"),
 		http:         &http.Client{},
+		apiBase:      defaultAPIBase,
+		tokenURL:     defaultTokenURL,
 	}
 }
 
@@ -38,6 +75,8 @@ func NewClientForUser(clientID, clientSecret, refreshToken string) *Client {
 		clientSecret: clientSecret,
 		refreshToken: refreshToken,
 		http:         &http.Client{},
+		apiBase:      defaultAPIBase,
+		tokenURL:     defaultTokenURL,
 	}
 }
 
@@ -143,7 +182,7 @@ func (c *Client) GetToken() (string, error) {
 	body.Set("grant_type", "refresh_token")
 	body.Set("refresh_token", c.refreshToken)
 
-	req, err := http.NewRequest("POST", "https://accounts.spotify.com/api/token", strings.NewReader(body.Encode()))
+	req, err := http.NewRequest("POST", c.tokenURL, strings.NewReader(body.Encode()))
 	if err != nil {
 		return "", err
 	}
@@ -152,12 +191,17 @@ func (c *Client) GetToken() (string, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		c.observe("token", 0)
 		return "", err
 	}
 	defer resp.Body.Close()
+	c.observe("token", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
+		if strings.Contains(string(b), "invalid_grant") {
+			return "", fmt.Errorf("token request failed (%d): %w: %s", resp.StatusCode, ErrInvalidGrant, b)
+		}
 		return "", fmt.Errorf("token request failed (%d): %s", resp.StatusCode, b)
 	}
 
@@ -171,8 +215,14 @@ func (c *Client) GetToken() (string, error) {
 	return c.accessToken, nil
 }
 
-func (c *Client) GetRecentlyPlayed(token string) ([]TrackItem, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player/recently-played?limit=50", nil)
+// GetRecentlyPlayed returns up to 50 recent plays. If afterMs > 0 only plays
+// after that unix-millisecond cursor are returned.
+func (c *Client) GetRecentlyPlayed(token string, afterMs int64) ([]TrackItem, error) {
+	u := c.apiBase + "/v1/me/player/recently-played?limit=50"
+	if afterMs > 0 {
+		u += "&after=" + strconv.FormatInt(afterMs, 10)
+	}
+	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -180,13 +230,19 @@ func (c *Client) GetRecentlyPlayed(token string) ([]TrackItem, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		c.observe("recently_played", 0)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	c.observe("recently_played", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("recently-played failed (%d): %s", resp.StatusCode, b)
+		apiErr := &APIError{Status: resp.StatusCode, Body: strings.TrimSpace(string(b))}
+		if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
+			apiErr.RetryAfter = time.Duration(secs) * time.Second
+		}
+		return nil, apiErr
 	}
 
 	var result RecentlyPlayedResponse
@@ -194,30 +250,4 @@ func (c *Client) GetRecentlyPlayed(token string) ([]TrackItem, error) {
 		return nil, err
 	}
 	return result.Items, nil
-}
-
-func (c *Client) GetAudioFeatures(token string, trackIDs []string) ([]AudioFeatures, error) {
-	req, err := http.NewRequest("GET",
-		"https://api.spotify.com/v1/audio-features?ids="+strings.Join(trackIDs, ","), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("audio-features failed (%d): %s", resp.StatusCode, b)
-	}
-
-	var result AudioFeaturesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return result.AudioFeatures, nil
 }

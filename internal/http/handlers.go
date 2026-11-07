@@ -11,6 +11,7 @@ import (
 
 	"github.com/mgnegrete/beatlytics/internal/auth"
 	"github.com/mgnegrete/beatlytics/internal/metrics"
+	"github.com/mgnegrete/beatlytics/internal/poller"
 	"github.com/mgnegrete/beatlytics/internal/spotify"
 	"github.com/mgnegrete/beatlytics/internal/store"
 )
@@ -18,7 +19,7 @@ import (
 type Handlers struct {
 	Sessions *auth.SessionStore
 	Store    *store.DB
-	Interval time.Duration
+	Pollers  *poller.Manager
 }
 
 func (h *Handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -78,8 +79,9 @@ func (h *Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := spotify.NewClientForUser(clientID, clientSecret, tokens.RefreshToken)
+	client.Observe = metrics.SpotifyRequest
 	client.SetToken(tokens.AccessToken, time.Duration(tokens.ExpiresIn)*time.Second)
-	metrics.StartPollerForUser(user.ID, client, h.Interval)
+	h.Pollers.Start(user.ID, client)
 
 	if err := h.Sessions.CreateSession(w, user.ID); err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)

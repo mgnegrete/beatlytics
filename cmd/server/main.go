@@ -10,6 +10,9 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/mgnegrete/beatlytics/internal/auth"
 	beathttp "github.com/mgnegrete/beatlytics/internal/http"
+	"github.com/mgnegrete/beatlytics/internal/metrics"
+	"github.com/mgnegrete/beatlytics/internal/poller"
+	"github.com/mgnegrete/beatlytics/internal/spotify"
 	"github.com/mgnegrete/beatlytics/internal/store"
 )
 
@@ -30,10 +33,24 @@ func main() {
 		}
 	}
 
+	pollers := poller.NewManager(db, interval)
+
+	// Resume polling for every known user using their stored refresh tokens.
+	users, err := db.ListUsers()
+	if err != nil {
+		log.Fatalf("list users: %v", err)
+	}
+	pollers.StartAll(users, func(u store.User) poller.Source {
+		c := spotify.NewClientForUser(os.Getenv("SPOTIFY_CLIENT_ID"), os.Getenv("SPOTIFY_CLIENT_SECRET"), u.RefreshToken)
+		c.Observe = metrics.SpotifyRequest
+		return c
+	})
+	log.Printf("resumed pollers for %d users", len(users))
+
 	h := &beathttp.Handlers{
 		Sessions: auth.NewSessionStore(os.Getenv("SESSION_SECRET")),
 		Store:    db,
-		Interval: interval,
+		Pollers:  pollers,
 	}
 
 	port := os.Getenv("PORT")
