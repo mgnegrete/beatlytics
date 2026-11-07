@@ -1,3 +1,5 @@
 *.env
 TODO.md
 *.db
+*.db-wal
+*.db-shm

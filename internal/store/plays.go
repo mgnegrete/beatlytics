@@ -103,3 +103,97 @@ func (d *DB) ListUsers() ([]User, error) {
 	}
 	return users, rows.Err()
 }
+
+// Window is a time range for top-N queries.
+type Window string
+
+const (
+	Window24h Window = "24h"
+	Window7d  Window = "7d"
+	Window30d Window = "30d"
+	WindowAll Window = "all"
+)
+
+// ParseWindow validates a window string from a request.
+func ParseWindow(s string) (Window, bool) {
+	switch w := Window(s); w {
+	case Window24h, Window7d, Window30d, WindowAll:
+		return w, true
+	}
+	return "", false
+}
+
+// Since returns the start of the window relative to now; zero means unbounded.
+func (w Window) Since(now time.Time) time.Time {
+	switch w {
+	case Window24h:
+		return now.Add(-24 * time.Hour)
+	case Window7d:
+		return now.Add(-7 * 24 * time.Hour)
+	case Window30d:
+		return now.Add(-30 * 24 * time.Hour)
+	}
+	return time.Time{}
+}
+
+type ArtistCount struct {
+	Name  string
+	Plays int
+}
+
+type TrackCount struct {
+	Name   string
+	Artist string
+	Plays  int
+}
+
+func sinceMs(since time.Time) int64 {
+	if since.IsZero() {
+		return 0
+	}
+	return since.UnixMilli()
+}
+
+// TopArtists returns up to limit artists by play count since the given time.
+func (d *DB) TopArtists(userID string, since time.Time, limit int) ([]ArtistCount, error) {
+	rows, err := d.sql.Query(`SELECT artist_name, COUNT(*) AS n FROM plays
+		WHERE user_id=? AND played_at_ms >= ?
+		GROUP BY artist_name ORDER BY n DESC, artist_name ASC LIMIT ?`,
+		userID, sinceMs(since), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []ArtistCount{}
+	for rows.Next() {
+		var a ArtistCount
+		if err := rows.Scan(&a.Name, &a.Plays); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// TopTracks returns up to limit tracks by play count since the given time.
+func (d *DB) TopTracks(userID string, since time.Time, limit int) ([]TrackCount, error) {
+	rows, err := d.sql.Query(`SELECT track_name, artist_name, COUNT(*) AS n FROM plays
+		WHERE user_id=? AND played_at_ms >= ?
+		GROUP BY track_id, track_name, artist_name ORDER BY n DESC, track_name ASC LIMIT ?`,
+		userID, sinceMs(since), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []TrackCount{}
+	for rows.Next() {
+		var t TrackCount
+		if err := rows.Scan(&t.Name, &t.Artist, &t.Plays); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
