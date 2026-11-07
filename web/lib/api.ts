@@ -28,21 +28,12 @@ export async function getMe(): Promise<Me | null> {
   }
 }
 
+export type Window = '24h' | '7d' | '30d' | 'all';
+
 export const api = {
-  moods: () =>
-    getJSON<{ genre: string; plays: number }[]>(
-      '/api/genres',
-      [
-        { genre: 'Energetic', plays: 18 },
-        { genre: 'Hype', plays: 12 },
-        { genre: 'Chill', plays: 10 },
-        { genre: 'Happy', plays: 8 },
-        { genre: 'Melancholic', plays: 5 },
-      ]
-    ),
-  artists: () =>
+  artists: (w: Window) =>
     getJSON<{ name: string; plays: number }[]>(
-      '/api/artists',
+      `/api/artists?window=${w}`,
       [
         { name: 'Artist One', plays: 12 },
         { name: 'Artist Two', plays: 9 },
@@ -51,9 +42,9 @@ export const api = {
         { name: 'Artist Five', plays: 3 },
       ]
     ),
-  tracks: () =>
+  tracks: (w: Window) =>
     getJSON<{ name: string; artist: string; plays: number }[]>(
-      '/api/tracks',
+      `/api/tracks?window=${w}`,
       [
         { name: 'Song One', artist: 'Artist One', plays: 6 },
         { name: 'Song Two', artist: 'Artist Two', plays: 5 },

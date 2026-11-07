@@ -1,16 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { RefreshCw, LogOut } from 'lucide-react';
-import { api, type Me } from '@/lib/api';
+import { api, type Me, type Window } from '@/lib/api';
 
-type MoodDatum   = { genre: string; plays: number };
 type ArtistDatum = { name: string; plays: number };
 type TrackDatum  = { name: string; artist: string; plays: number };
 type Health      = { status: 'ok' | 'degraded' | 'down'; lastIngestUnix?: number };
 
 const PREVIEW_COUNT = 10;
+
+const WINDOWS: { value: Window; label: string; phrase: string; empty: string }[] = [
+  { value: '24h', label: '24 hours', phrase: 'today',       empty: 'in the last 24 hours' },
+  { value: '7d',  label: '7 days',   phrase: 'this week',   empty: 'in the last 7 days' },
+  { value: '30d', label: '30 days',  phrase: 'this month',  empty: 'in the last 30 days' },
+  { value: 'all', label: 'All time', phrase: 'of all time', empty: 'yet' },
+];
 
 function fmtTimeAgo(unix?: number) {
   if (!unix) return 'not yet';
@@ -77,22 +83,21 @@ function ChartSection({
 }
 
 export default function BeatlyticsDashboard({ user }: { user: Me }) {
-  const [moods, setMoods]     = useState<MoodDatum[]>([]);
   const [artists, setArtists] = useState<ArtistDatum[]>([]);
   const [tracks, setTracks]   = useState<TrackDatum[]>([]);
   const [health, setHealth]   = useState<Health>({ status: 'ok' });
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded]   = useState(false);
+  const [win, setWin]         = useState<Window>('7d');
   const [allArtists, setAllArtists] = useState(false);
   const [allTracks, setAllTracks]   = useState(false);
   const reduceMotion = useReducedMotion() ?? false;
 
-  const load = async () => {
+  const load = async (w: Window = win) => {
     setLoading(true);
-    const [m, a, t, h] = await Promise.all([
-      api.moods(), api.artists(), api.tracks(), api.health(),
+    const [a, t, h] = await Promise.all([
+      api.artists(w), api.tracks(w), api.health(),
     ]);
-    setMoods(m ?? []);
     setArtists(a ?? []);
     setTracks(t ?? []);
     setHealth(h);
@@ -101,13 +106,13 @@ export default function BeatlyticsDashboard({ user }: { user: Me }) {
   };
 
   useEffect(() => {
-    load();
-    const id = setInterval(load, 30_000);
+    load(win);
+    const id = setInterval(() => load(win), 30_000);
     return () => clearInterval(id);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [win]);
 
-  const moodTotal = useMemo(() => moods.reduce((s, m) => s + m.plays, 0), [moods]);
-  const sortedMoods = useMemo(() => [...moods].sort((a, b) => b.plays - a.plays), [moods]);
+  const current = WINDOWS.find((w) => w.value === win)!;
 
   const topArtist = artists[0];
   const topTrack  = tracks[0];
@@ -137,7 +142,7 @@ export default function BeatlyticsDashboard({ user }: { user: Me }) {
             </span>
             <span>{user.displayName}</span>
             <button
-              onClick={load}
+              onClick={() => load(win)}
               disabled={loading}
               className="inline-flex items-center gap-1.5 hover:text-bone disabled:opacity-60"
             >
@@ -151,13 +156,29 @@ export default function BeatlyticsDashboard({ user }: { user: Me }) {
           </div>
         </header>
 
+        {/* Window selector */}
+        <div role="group" aria-label="Time window" className="mt-10 inline-flex rounded-full border border-edge p-1 text-sm">
+          {WINDOWS.map((w) => (
+            <button
+              key={w.value}
+              onClick={() => setWin(w.value)}
+              aria-pressed={win === w.value}
+              className={`rounded-full px-4 py-1.5 font-medium transition ${
+                win === w.value ? 'bg-bone text-ink' : 'text-dust hover:text-bone'
+              }`}
+            >
+              {w.label}
+            </button>
+          ))}
+        </div>
+
         {/* Hero */}
-        <section className="min-h-[16rem] pb-14 pt-14 sm:pb-20 sm:pt-24">
+        <section className="min-h-[16rem] pb-14 pt-10 sm:pb-20 sm:pt-16">
           {loaded && topArtist && (
             <>
               <h1 className="display text-[clamp(3rem,11vw,8.5rem)]">{topArtist.name}</h1>
               <p className="mt-6 max-w-xl text-lg text-dust">
-                Your most played artist lately, with {plural(topArtist.plays)}.
+                Your most played artist {current.phrase}, with {plural(topArtist.plays)}.
                 {topTrack && (
                   <>
                     {' '}On repeat: <span className="text-bone">{topTrack.name}</span> by {topTrack.artist}.
@@ -170,8 +191,8 @@ export default function BeatlyticsDashboard({ user }: { user: Me }) {
             <>
               <h1 className="display text-[clamp(3rem,9vw,6.5rem)]">Nothing played yet.</h1>
               <p className="mt-6 max-w-xl text-lg text-dust">
-                Play something on Spotify. Beatlytics checks your history every few minutes,
-                so your first results can take a little while to show up.
+                No plays recorded {current.empty}. Beatlytics checks Spotify every few minutes,
+                so new plays can take a little while to show up.
               </p>
             </>
           )}
@@ -217,30 +238,6 @@ export default function BeatlyticsDashboard({ user }: { user: Me }) {
               ))}
             </ChartSection>
           </div>
-        )}
-
-        {/* Moods: only shown when the backend has mood data */}
-        {moodTotal > 0 && (
-          <section className="mt-20">
-            <h2 className="border-b border-bone/30 pb-3 text-2xl font-semibold tracking-tight">Moods</h2>
-            <div className="mt-6 flex h-4 gap-0.5 overflow-hidden rounded-full" role="img"
-                 aria-label={sortedMoods.map((m) => `${m.genre} ${Math.round((m.plays / moodTotal) * 100)}%`).join(', ')}>
-              {sortedMoods.map((m, i) => (
-                <div
-                  key={m.genre}
-                  className="bg-signal"
-                  style={{ width: `${(m.plays / moodTotal) * 100}%`, opacity: Math.max(0.2, 1 - i * 0.12) }}
-                />
-              ))}
-            </div>
-            <ul className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-dust">
-              {sortedMoods.map((m) => (
-                <li key={m.genre}>
-                  <span className="text-bone">{m.genre}</span> {Math.round((m.plays / moodTotal) * 100)}%
-                </li>
-              ))}
-            </ul>
-          </section>
         )}
 
         <footer className="mt-20 text-sm text-dust">
