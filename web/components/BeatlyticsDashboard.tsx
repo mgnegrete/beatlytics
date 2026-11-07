@@ -6,11 +6,13 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { RefreshCw, Activity, Circle, Server, Timer } from 'lucide-react';
-import { api } from '@/lib/api';
+import { RefreshCw, Activity, Circle, Server, Timer, LogOut } from 'lucide-react';
+import { api, type Me } from '@/lib/api';
 
-type GenreDatum = { genre: string; plays: number };
-type Health = { status: 'ok' | 'degraded' | 'down'; lastIngestUnix?: number };
+type MoodDatum   = { genre: string; plays: number };
+type ArtistDatum = { name: string; plays: number };
+type TrackDatum  = { name: string; artist: string; plays: number };
+type Health      = { status: 'ok' | 'degraded' | 'down'; lastIngestUnix?: number };
 
 function fmtTimeAgo(unix?: number) {
   if (!unix) return '–';
@@ -20,15 +22,21 @@ function fmtTimeAgo(unix?: number) {
   return `${Math.floor(delta / 3600)}h ago`;
 }
 
-export default function BeatlyticsDashboard() {
-  const [genres, setGenres] = useState<GenreDatum[]>([]);
-  const [health, setHealth] = useState<Health>({ status: 'ok' });
+export default function BeatlyticsDashboard({ user }: { user: Me }) {
+  const [moods, setMoods]     = useState<MoodDatum[]>([]);
+  const [artists, setArtists] = useState<ArtistDatum[]>([]);
+  const [tracks, setTracks]   = useState<TrackDatum[]>([]);
+  const [health, setHealth]   = useState<Health>({ status: 'ok' });
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    const [g, h] = await Promise.all([api.genres(), api.health()]);
-    setGenres(g);
+    const [m, a, t, h] = await Promise.all([
+      api.moods(), api.artists(), api.tracks(), api.health(),
+    ]);
+    setMoods(m);
+    setArtists(a);
+    setTracks(t);
     setHealth(h);
     setLoading(false);
   };
@@ -39,51 +47,54 @@ export default function BeatlyticsDashboard() {
     return () => clearInterval(id);
   }, []);
 
-  const pieData = useMemo(
-    () => genres.map((g) => ({ name: g.genre, value: g.plays })),
-    [genres]
-  );
-  const topGenres = useMemo(
-    () => [...genres].sort((a, b) => b.plays - a.plays).slice(0, 8),
-    [genres]
-  );
+  const pieData  = useMemo(() => moods.map((m) => ({ name: m.genre, value: m.plays })), [moods]);
+  const topMoods = useMemo(() => [...moods].sort((a, b) => b.plays - a.plays).slice(0, 8), [moods]);
 
   const statusColor =
-    health.status === 'ok'
-      ? 'text-green-600'
-      : health.status === 'degraded'
-      ? 'text-amber-600'
-      : 'text-red-600';
+    health.status === 'ok' ? 'text-green-600'
+    : health.status === 'degraded' ? 'text-amber-600'
+    : 'text-red-600';
   const statusLabel =
-    health.status === 'ok'
-      ? 'Healthy'
-      : health.status === 'degraded'
-      ? 'Degraded'
-      : 'Down';
+    health.status === 'ok' ? 'Healthy'
+    : health.status === 'degraded' ? 'Degraded'
+    : 'Down';
 
   return (
-    <div className="min-h-screen bg-black-500 p-6">
+    <div className="min-h-screen bg-black p-6">
       <div className="mx-auto max-w-6xl space-y-6">
+
         {/* Header */}
         <div className="flex items-center justify-between">
-          <motion.h1 layout className="text-3xl font-bold tracking-tight text-emerald-600">
-            Beatlytics Dashboard
-          </motion.h1>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="inline-flex items-center rounded-2xl bg-gray-900 px-4 py-2 text-sm font-medium text-green disabled:opacity-60"
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div>
+            <motion.h1 layout className="text-3xl font-bold tracking-tight text-emerald-600">
+              Beatlytics Dashboard
+            </motion.h1>
+            <p className="mt-1 text-sm text-gray-400">{user.displayName}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={load}
+              disabled={loading}
+              className="inline-flex items-center rounded-2xl bg-gray-900 px-4 py-2 text-sm font-medium text-emerald-400 disabled:opacity-60"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <a
+              href="/auth/logout"
+              className="inline-flex items-center rounded-2xl bg-gray-900 px-4 py-2 text-sm font-medium text-gray-400 hover:text-white"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </a>
+          </div>
         </div>
 
         {/* Status Cards */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="rounded-2xl bg-black p-5 shadow-sm">
+          <div className="rounded-2xl bg-gray-900 p-5">
             <div className="flex items-center gap-3">
-              <Server className="h-5 w-5 text-gray-700" />
+              <Server className="h-5 w-5 text-gray-500" />
               <div className="text-sm text-emerald-500">Service Health</div>
             </div>
             <div className={`mt-2 flex items-center gap-2 font-semibold ${statusColor}`}>
@@ -91,53 +102,50 @@ export default function BeatlyticsDashboard() {
               {statusLabel}
             </div>
           </div>
-
-          <div className="rounded-2xl bg-black p-5 shadow-sm">
+          <div className="rounded-2xl bg-gray-900 p-5">
             <div className="flex items-center gap-3">
-              <Timer className="h-5 w-5 text-gray-700" />
+              <Timer className="h-5 w-5 text-gray-500" />
               <div className="text-sm text-emerald-500">Last Ingest</div>
             </div>
-            <div className="mt-2 text-lg font-semibold">{fmtTimeAgo(health.lastIngestUnix)}</div>
+            <div className="mt-2 text-lg font-semibold text-white">{fmtTimeAgo(health.lastIngestUnix)}</div>
           </div>
-
-          <div className="rounded-2xl bg-black p-5 shadow-sm">
+          <div className="rounded-2xl bg-gray-900 p-5">
             <div className="flex items-center gap-3">
-              <Activity className="h-5 w-5 text-gray-700" />
-              <div className="text-sm text-emerald-500">Tracked Genres</div>
+              <Activity className="h-5 w-5 text-gray-500" />
+              <div className="text-sm text-emerald-500">Mood Buckets</div>
             </div>
-            <div className="mt-2 text-lg font-semibold">{genres.length || 0}</div>
+            <div className="mt-2 text-lg font-semibold text-white">{moods.length}</div>
           </div>
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 border-white">
-          <div className="rounded-2xl bg-black-500 p-5 shadow-sm">
-            <div className="mb-3 text-sm font-medium text-emerald-600">Plays by Genre (Top 8)</div>
+        {/* Mood Charts */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl bg-gray-900 p-5">
+            <div className="mb-3 text-sm font-medium text-emerald-600">Plays by Mood (Top 8)</div>
             <div className="h-72 w-full">
               <ResponsiveContainer>
-                <BarChart data={topGenres}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="genre" />
-                  <YAxis allowDecimals={false} />
-                  <ReTooltip />
+                <BarChart data={topMoods}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="genre" tick={{ fill: '#9ca3af', fontSize: 12 }} />
+                  <YAxis allowDecimals={false} tick={{ fill: '#9ca3af' }} />
+                  <ReTooltip contentStyle={{ background: '#111827', border: 'none' }} />
                   <Legend />
-                  <Bar dataKey="plays" name="Plays" radius={[6, 6, 0, 0]} fill="#059669"/>
+                  <Bar dataKey="plays" name="Plays" radius={[6, 6, 0, 0]} fill="#059669" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
-
-          <div className="rounded-2xl p-5 shadow-sm border-white bg-black-500">
-            <div className="mb-3 text-sm font-medium text-emerald-600">Distribution</div>
+          <div className="rounded-2xl bg-gray-900 p-5">
+            <div className="mb-3 text-sm font-medium text-emerald-600">Mood Distribution</div>
             <div className="h-72 w-full">
               <ResponsiveContainer>
                 <PieChart>
                   <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={100}>
                     {pieData.map((_, idx) => (
-                      <Cell key={idx} fill="#059669" />
+                      <Cell key={idx} fill="#059669" opacity={0.6 + (idx % 4) * 0.1} />
                     ))}
                   </Pie>
-                  <ReTooltip />
+                  <ReTooltip contentStyle={{ background: '#111827', border: 'none' }} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -145,38 +153,68 @@ export default function BeatlyticsDashboard() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="rounded-2xl bg-black shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-white-500 divide-y divide-black-200">
-              <thead className="bg-black-500">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-large uppercase tracking-wider text-emerald-500">
-                    Genre
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-large uppercase tracking-wider text-emerald-500">
-                    Plays
-                  </th>
-                </tr>
-              </thead>    
-              <tbody className="divide-y divide-gray-200 bg-black">
-                {genres.map((g) => (
-                  <tr key={g.genre}>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-emerald-500">
-                      {g.genre}
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-emerald-500">
-                      {g.plays}
-                    </td>
+        {/* Artists + Tracks Tables */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+          {/* Top Artists */}
+          <div className="rounded-2xl bg-gray-900 overflow-hidden">
+            <div className="px-6 py-4 text-sm font-medium text-emerald-600 border-b border-gray-800">
+              Top Artists
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-800">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">#</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Artist</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Plays</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {artists.map((a, i) => (
+                    <tr key={a.name}>
+                      <td className="px-6 py-3 text-sm text-gray-500">{i + 1}</td>
+                      <td className="px-6 py-3 text-sm font-medium text-emerald-400">{a.name}</td>
+                      <td className="px-6 py-3 text-sm text-gray-300">{a.plays}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Top Tracks */}
+          <div className="rounded-2xl bg-gray-900 overflow-hidden">
+            <div className="px-6 py-4 text-sm font-medium text-emerald-600 border-b border-gray-800">
+              Top Songs
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-800">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">#</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Song</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Artist</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Plays</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {tracks.map((t, i) => (
+                    <tr key={t.name + t.artist}>
+                      <td className="px-6 py-3 text-sm text-gray-500">{i + 1}</td>
+                      <td className="px-6 py-3 text-sm font-medium text-emerald-400">{t.name}</td>
+                      <td className="px-6 py-3 text-sm text-gray-300">{t.artist}</td>
+                      <td className="px-6 py-3 text-sm text-gray-300">{t.plays}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <div className="pt-2 text-center text-xs text-gray-500">
-          Tip: Run your Go server on <code>localhost:8081</code>. The dev proxy will forward <code>/api/*</code>.
+        <div className="pt-2 text-center text-xs text-gray-600">
+          Data refreshes every 30 seconds · Powered by Spotify
         </div>
       </div>
     </div>

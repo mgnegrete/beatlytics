@@ -7,7 +7,11 @@ const nextConfig = {
       ? [
           {
             source: '/api/:path*',
-            destination: 'http://localhost:8081/api/:path*',
+            destination: 'http://localhost:8082/api/:path*',
+          },
+          {
+            source: '/auth/:path*',
+            destination: 'http://localhost:8082/auth/:path*',
           },
         ]
       : [];

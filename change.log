@@ -1,0 +1,59 @@
+# Beatlytics Change Log
+
+## 2026-04-18
+
+### Summary
+Full backend + frontend MVP built from scratch, then extended with per-user Spotify OAuth, SQLite persistence, and a pivot from genre-based metrics (Spotify's genre API returns empty data for most artists) to audio-feature-based mood buckets. Also added top 25 artists and top 25 songs tables to the dashboard.
+
+---
+
+### Phase 1 — MVP Backend (Tasks 1–7)
+Implemented all stub files to produce a working Go server that polls Spotify and serves metrics.
+
+- `internal/spotify/models.go` — `RecentlyPlayedResponse`, `TrackItem`, `Track`, `Artist` structs with JSON tags
+- `internal/spotify/client.go` — `NewClient`, `GetToken` (refresh token flow with token caching), `GetRecentlyPlayed`, `GetArtistGenres`
+- `internal/metrics/metrics.go` — Prometheus gauge (`spotify_genre_plays_total`), `RecordGenres`, `GenreSnapshot`, `LastIngestUnix`, `StartPoller` background goroutine
+- `internal/http/handlers.go` — `GenresHandler`, `HealthHandler`
+- `internal/http/middleware.go` — package declaration stub
+- `internal/http/router.go` — `NewRouter` wiring `/metrics`, `/api/genres`, `/api/health`, `/`
+- `cmd/server/main.go` — wired client, poller, router; reads `PORT` from env
+- `.env` — added `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN`, `SPOTIFY_POLL_INTERVAL`
+
+---
+
+### Phase 2 — Token Caching Fix
+- `internal/spotify/client.go` — added `accessToken`/`tokenExpiry` fields + `sync.Mutex`; `GetToken()` now reuses cached token until 60s before expiry instead of fetching a new one every poll cycle
+
+---
+
+### Phase 3 — Per-User Spotify OAuth + SQLite Auth
+Replaced single hardcoded refresh token with full OAuth sign-in flow so any user can authenticate with their own Spotify account.
+
+- `internal/store/models.go` — new package; `User` struct
+- `internal/store/db.go` — SQLite store via `modernc.org/sqlite`; `Open`, `UpsertUser`, `GetUserByID`, `GetUserBySpotifyID`; auto-migrates `users` table on startup
+- `internal/auth/session.go` — new package; HMAC-SHA256 signed cookie sessions; `NewSessionStore`, `CreateSession`, `GetUserID`, `DeleteSession`
+- `internal/spotify/client.go` — added `NewClientForUser`, `SetToken`, `ExchangeCode` (authorization code → tokens), `GetProfile` (/v1/me), `TokenPair`, `Profile`
+- `internal/metrics/metrics.go` — refactored all snapshots to be keyed by `userID`; `StartPollerForUser` tracks running pollers per user; Prometheus gauge now has `user_id` label
+- `internal/http/middleware.go` — `RequireAuth` middleware; validates session cookie and injects `userID` into request context
+- `internal/http/handlers.go` — `Handlers` struct with injected deps; added `LoginHandler`, `CallbackHandler` (OAuth flow + poller start), `LogoutHandler`, `MeHandler`; all data handlers now per-user
+- `internal/http/router.go` — `NewRouter` takes `*Handlers`; added `/auth/login`, `/auth/callback`, `/auth/logout`, `/api/me`; all `/api/*` routes wrapped with `RequireAuth`
+- `cmd/server/main.go` — initializes SQLite DB and session store; removed global single-user poller
+- `.env` — removed `SPOTIFY_REFRESH_TOKEN`; added `SPOTIFY_REDIRECT_URI`, `SESSION_SECRET`
+- `web/next.config.ts` — fixed proxy port (8081 → 8082); added `/auth/*` proxy rule so cookies work same-origin
+- `web/lib/api.ts` — added `getMe()` and `Me` interface
+- `web/app/page.tsx` — auth guard on mount; redirects to `/login` if unauthenticated
+- `web/components/BeatlyticsDashboard.tsx` — accepts `user: Me` prop; shows display name and Sign Out button
+- `web/app/login/page.tsx` — new login page with "Sign in with Spotify" button
+
+---
+
+### Phase 4 — Audio Features Pivot + Artists/Songs Tables
+Spotify's genre API returns empty arrays for most artists. Switched to audio features API which gives reliable per-track data. Also added top 25 artists and songs tables sorted by play count.
+
+- `internal/spotify/models.go` — added `AudioFeatures` and `AudioFeaturesResponse` structs; removed `Genres` field from `Artist`
+- `internal/spotify/client.go` — replaced `GetArtistGenres` with `GetAudioFeatures` (batch call to `/v1/audio-features?ids=...`)
+- `internal/metrics/metrics.go` — full rewrite; replaced genre snapshot with `moodByUser`, `artistsByUser`, `tracksByUser`; new `ArtistCount` and `TrackCount` types; `classifyMood()` buckets each track into one of 9 moods (Hype, Energetic, Aggressive, Happy, Danceable, Focus, Melancholic, Chill, Neutral); `pollUser` now counts plays per track and artist, batch-fetches audio features, sorts top 25 each; Prometheus gauge renamed to `spotify_mood_plays_total`
+- `internal/http/handlers.go` — `GenresHandler` → `MoodsHandler`; added `ArtistsHandler`, `TracksHandler`
+- `internal/http/router.go` — added `/api/artists`, `/api/tracks`
+- `web/lib/api.ts` — `api.genres()` → `api.moods()`; added `api.artists()`, `api.tracks()` with mock fallbacks
+- `web/components/BeatlyticsDashboard.tsx` — full rewrite; mood bar + pie charts replace genre charts; added Top Artists table (rank, name, plays) and Top Songs table (rank, song, artist, plays) side by side; status card updated to "Mood Buckets"

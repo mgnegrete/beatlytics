@@ -5,33 +5,36 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/mgnegrete/beatlytics/internal/auth"
+	beathttp "github.com/mgnegrete/beatlytics/internal/http"
+	"github.com/mgnegrete/beatlytics/internal/store"
 )
-
-var (
-	genreCount = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "spotify_genre_plays_total",
-			Help: "Number of times a genre appears in listening history",
-		},
-		[]string{"genre"},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(genreCount)
-}
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
+	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
 
-	http.Handle("/metrics", promhttp.Handler())
+	db, err := store.Open("beatlytics.db")
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+
+	interval := 5 * time.Minute
+	if v := os.Getenv("SPOTIFY_POLL_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			interval = d
+		}
+	}
+
+	h := &beathttp.Handlers{
+		Sessions: auth.NewSessionStore(os.Getenv("SESSION_SECRET")),
+		Store:    db,
+		Interval: interval,
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -39,8 +42,5 @@ func main() {
 	}
 
 	fmt.Printf("Starting Beatlytics on port %s\n", port)
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Beatlytics is up\n"))
-	})
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, beathttp.NewRouter(h)))
 }
