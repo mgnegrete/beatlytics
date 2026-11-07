@@ -13,7 +13,8 @@ type DB struct {
 }
 
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path)
+	// WAL + busy timeout so concurrent per-user pollers don't hit "database is locked".
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +33,24 @@ func migrate(db *sql.DB) error {
 			refresh_token TEXT NOT NULL,
 			created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP
-		)
+		);
+
+		CREATE TABLE IF NOT EXISTS plays (
+			user_id      TEXT NOT NULL,
+			track_id     TEXT NOT NULL,
+			played_at_ms INTEGER NOT NULL,
+			track_name   TEXT NOT NULL,
+			artist_name  TEXT NOT NULL,
+			ms_played    INTEGER,
+			source       TEXT NOT NULL,
+			UNIQUE (user_id, track_id, played_at_ms)
+		);
+		CREATE INDEX IF NOT EXISTS idx_plays_user_time ON plays (user_id, played_at_ms);
+
+		CREATE TABLE IF NOT EXISTS poll_state (
+			user_id           TEXT PRIMARY KEY,
+			last_played_at_ms INTEGER NOT NULL
+		);
 	`)
 	return err
 }
