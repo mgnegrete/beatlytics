@@ -57,3 +57,19 @@ Spotify's genre API returns empty arrays for most artists. Switched to audio fea
 - `internal/http/router.go` — added `/api/artists`, `/api/tracks`
 - `web/lib/api.ts` — `api.genres()` → `api.moods()`; added `api.artists()`, `api.tracks()` with mock fallbacks
 - `web/components/BeatlyticsDashboard.tsx` — full rewrite; mood bar + pie charts replace genre charts; added Top Artists table (rank, name, plays) and Top Songs table (rank, song, artist, plays) side by side; status card updated to "Mood Buckets"
+
+
+---
+
+### Phase 5 — Play history, windows, Prometheus and Grafana
+Spotify's API only returns the last ~50 plays and `/v1/audio-features` returns 403 for this app, so moods were removed and every play is now stored.
+
+- `internal/store/plays.go`, `db.go` — `plays` and `poll_state` tables, `InsertPlays` (transactional, idempotent, atomic cursor), windowed `TopArtists`/`TopTracks`, `ListUsers`, `FirstLivePlay`; WAL + busy timeout
+- `internal/spotify/` — `GetRecentlyPlayed(token, afterMs)`, `APIError`, `ErrInvalidGrant`, `Observe` hook; audio features removed
+- `internal/poller/` — new; `PollOnce` and `Manager`; pollers resume for all stored users on startup
+- `internal/metrics/` — rewritten: play counters plus poller health, request-code, latency metrics; mood gauge removed
+- `internal/importer/`, `cmd/import/` — Spotify extended streaming history importer
+- `internal/http/` — `/api/artists` and `/api/tracks` take `?window=`; `/api/genres` removed
+- `web/` — UI redesign (hero + ranked lists), window selector, mood UI removed
+- `monitoring/` — Docker Compose for Prometheus (1y retention, alert rules) and Grafana (provisioned dashboard)
+- Known limitation: Grafana `increase()` cannot see a new series' first count; imported history is not in Grafana
